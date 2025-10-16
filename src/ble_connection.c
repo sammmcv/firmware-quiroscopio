@@ -12,7 +12,7 @@
 #include "hardware/sync.h"
 
 // ===== Defines BLE =====
-#define BLE_TX_BUF_SIZE 4096  // Buffer circular para cola de transmisión
+// Usar BLE_TX_BUF_SIZE desde shared_types.h
 #define TXQ_MAX 256           // Cola de supertramas para CAN_SEND_NOW (aumentado para minimizar drops)
 
 // ===== Variables BLE Globales =====
@@ -30,7 +30,7 @@ volatile bool ble_advertising = false;  // Expuesta para main.c
 volatile uint32_t last_adv_restart = 0;  // Expuesta para main.c
 static volatile uint16_t ble_chunk_max = 0;  // MTU negociado
 
-// --- Nueva cola CAN_SEND_NOW (patrón BTstack oficial) ---
+// --- Cola CAN_SEND_NOW (patrón BTstack oficial) ---
 static struct {
     uint16_t len;
     uint8_t data[256];

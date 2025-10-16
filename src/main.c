@@ -96,7 +96,6 @@ extern const uint8_t SENSOR_ADDR[];
 #define ZERO_STUCK_N           10
 #define FAIL_STUCK_N           25
 #define REINIT_COOLDOWN_MS     2000
-#define BLE_TX_BUF_SIZE        4096
 
 // Helper para debug (no usado en versión actual)
 static void append_chunk(char *buf, size_t max_len, const char *chunk) {
@@ -158,7 +157,7 @@ int main() {
         return -1;
     }
     
-    // Disable Wi-Fi/BLE coexistence since this project only uses BLE
+    // Desactivar Wifi, solo BLE
     cyw43_arch_disable_sta_mode();
     
     // Inicializar spin lock para BLE buffer PRIMERO
@@ -169,7 +168,7 @@ int main() {
     l2cap_init();
     sm_init();
     
-    // NUEVO: Solicitar MTU de 247 bytes (máximo BLE)
+    // Solicitar MTU de 247 bytes (máximo BLE)
     l2cap_set_max_le_mtu(247);
     
     att_server_init(profile_data, NULL, NULL);
@@ -181,7 +180,7 @@ int main() {
     gap_advertisements_set_params(0x0030, 0x0030, 0, 0, null_addr, 0x07, 0);
     const uint8_t adv_data[] = {
         0x02, BLUETOOTH_DATA_TYPE_FLAGS, 0x06,
-        0x08, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME, 'h','e','n','r','y','v','2'
+        0x08, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME, 'q','u','i','r','o','s','c','o','p','e'
     };
     gap_advertisements_set_data(sizeof(adv_data), (uint8_t*)adv_data);
     hci_power_control(HCI_POWER_ON);
@@ -216,9 +215,9 @@ int main() {
     // --- Bucle Principal (Core0) ---
     int16_t accelX, accelY, accelZ;
     float fX, fY, fZ; // usar aceleración lineal en I2C
-    // --- NUEVO: variables temporales para cuaterniones UART ---
+    // --- Variables temporales para cuaterniones UART ---
     float fQX, fQY, fQZ, fQW;
-    // --- NUEVO: Variable para lectura cruda UART (sin FP) ---
+    // --- Variable para lectura cruda UART (sin FP) ---
     sensor_sample_raw_t uart_raw;
     // Precalcular etiquetas para evitar snprintf en cada iteración
     char tag_i2c0[NUM_SENSORS][32], tag_i2c1[NUM_SENSORS][32];
@@ -227,11 +226,11 @@ int main() {
         snprintf(tag_i2c1[i], sizeof(tag_i2c1[i]), "I2C CORE1 0x%02X", SENSOR_ADDR[i]);
     }
 
-    // --- NUEVO: Variables para medición de tiempo de bucle ---
+    // --- Variables para medición de tiempo de bucle ---
     uint32_t last_report_ms = 0;
 
     while (true) {
-        // --- NUEVO: Inicio de medición de bucle ---
+        // --- Inicio de medición de bucle ---
         loop_start_us = time_us_32();
 
         // --- Comandos de control ---
@@ -262,7 +261,7 @@ int main() {
             }
         }
 
-        // NUEVO: asegurar re-activación de advertising cada 2s si no hay conexión ni advertising activo
+        // Asegurar re-activación de advertising cada 2s si no hay conexión ni advertising activo
         if (ble_con_handle == HCI_CON_HANDLE_INVALID && !ble_advertising) {
             if (cooldown_elapsed(&last_adv_restart, 2000)) {
                 gap_advertisements_enable(1);
@@ -398,7 +397,7 @@ int main() {
         
         g_line_number++;
         
-        // --- NUEVO: Fin de medición y cálculo de estadísticas ---
+        // Fin de medición y cálculo de estadísticas ---
         uint32_t loop_end_us = time_us_32();
         uint32_t loop_time_us = loop_end_us - loop_start_us;
         

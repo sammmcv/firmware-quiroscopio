@@ -100,8 +100,6 @@ static bool unpack_superframe(const uint8_t *in, size_t len,
     return true;
 }
 
-// Eliminados enc_acc/enc_quat (legacy con floats)
-
 static inline uint8_t make_flags(uint8_t src, uint8_t core) {
     return (src & 0x03) | ((core & 0x01) << 2);
 }

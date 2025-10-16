@@ -46,8 +46,6 @@ static bool i2c_read_n_with_deadline(i2c_inst_t *i2c, uint8_t dev_addr,
     return true;
 }
 
- 
-
 // ===== Hardware Defines =====
 #define I2C_PROBE_TIMEOUT_US 5000
 #define I2C_RW_TIMEOUT_US    5000
@@ -197,8 +195,6 @@ static inline bool cooldown_elapsed(uint32_t *stamp, uint32_t ms) {
     return true;
 }
 
-// Eliminado: near_zero3(float) solo se usaba en la ruta I2C legacy
-
 // ===== I2C Functions =====
 void init_i2c_port(i2c_inst_t *port, uint sda_pin, uint scl_pin, uint baud) {
     i2c_init(port, baud);
@@ -306,8 +302,7 @@ bool i2c_read_regs_port(i2c_inst_t *port, uint8_t addr, uint8_t reg, uint8_t *bu
     return true;
 }
 
-// Eliminado: read_bno_i2c_sample() y poll_i2c_bus() (ruta I2C legacy con floats)
-
+// Re-inicializar el sensor I2C si responde
 static void try_reinit_bno_i2c(i2c_inst_t *port, uint8_t addr) {
     // Si el dispositivo responde, re-afirma NDOF y listo
     uint8_t reg = BNO055_CHIP_ID_ADDR, cid = 0;

@@ -10,6 +10,11 @@
 // Constantes
 #define NUM_SENSORS 2
 
+// Tamaño del buffer TX BLE (fuente única de verdad)
+#ifndef BLE_TX_BUF_SIZE
+#define BLE_TX_BUF_SIZE 4096
+#endif
+
 // Tipo legacy para I2C (todavía usa floats - TODO: migrar a raw)
 typedef struct {
     bool valid;
@@ -64,7 +69,7 @@ bool bno_read_linear_acc(int16_t *x, int16_t *y, int16_t *z);
 void bno_uart_recover(void);
 bool bno_read_acc_raw(sensor_sample_raw_t* s);
 bool bno_read_quat_raw(sensor_sample_raw_t* s);
-// I2C raw reading helpers
+// I2C lectores (raw)
 bool bno_i2c_read_acc_raw(i2c_inst_t *i2c, uint8_t dev_addr, sensor_sample_raw_t *s);
 bool bno_i2c_read_quat_raw(i2c_inst_t *i2c, uint8_t dev_addr, sensor_sample_raw_t *s);
 bool read_bno_i2c_sample_raw(int idx, sensor_sample_raw_t *out);
