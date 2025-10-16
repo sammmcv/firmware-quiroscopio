@@ -12,9 +12,6 @@
 
 // ===== Q15 helpers (sin FP) =====
 // Ganancia en Q15 (1.0 = 32768), bias en mg
-#ifndef Q15_ONE
-#define Q15_ONE 32768
-#endif
 
 static inline int16_t q15_mul_s16(int16_t x, int16_t g_q15){
     int32_t t = (int32_t)x * (int32_t)g_q15; // 16x16 -> 32
@@ -23,15 +20,6 @@ static inline int16_t q15_mul_s16(int16_t x, int16_t g_q15){
     if (t > 32767) t = 32767;
     if (t < -32768) t = -32768;
     return (int16_t)t;
-}
-
-void acc_apply_calib_q15(sensor_sample_raw_t* s, const acc_calib_q15_t* c){
-    int16_t x = (int16_t)(s->ax_mg - c->bx_mg);
-    int16_t y = (int16_t)(s->ay_mg - c->by_mg);
-    int16_t z = (int16_t)(s->az_mg - c->bz_mg);
-    s->ax_mg = q15_mul_s16(x, c->gx_q15);
-    s->ay_mg = q15_mul_s16(y, c->gy_q15);
-    s->az_mg = q15_mul_s16(z, c->gz_q15);
 }
 
 // ===== Flash Defines =====

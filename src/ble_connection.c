@@ -46,22 +46,7 @@ volatile uint32_t ble_bytes_sent = 0;
 volatile uint32_t ble_drops = 0;
 volatile uint32_t ble_skipped_samples = 0;
 
-// ===== LED y USB Helpers =====
-static inline void led_on(bool on) {
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, on);
-}
-
-static inline bool usb_conectado(void) {
-    // No usar VBUS - usar conexión stdio USB
-    return stdio_usb_connected();
-}
-
 // ===== Funciones para cola CAN_SEND_NOW =====
-
-// Obtener MTU actual
-uint16_t ble_current_att_mtu(void) {
-    return g_att_mtu;
-}
 
 // Actualizar MTU cuando cambie
 static void on_mtu_change(uint16_t mtu) {
@@ -135,12 +120,6 @@ uint16_t ble_tx_free_space(void) {
     uint32_t virtual_bytes = ((uint32_t)BLE_TX_BUF_SIZE * free_slots) / (TXQ_MAX - 1);
     if (virtual_bytes > 0xFFFF) virtual_bytes = 0xFFFF;
     return (uint16_t)virtual_bytes;
-}
-
-bool ble_has_space_for(uint16_t bytes) {
-    // Mantener un pequeño margen para evitar borde 0
-    uint16_t free_b = ble_tx_free_space();
-    return free_b >= (uint16_t)(bytes + 32);
 }
 
 // ===== Vaciar cola respetando ATT CAN_SEND_NOW =====

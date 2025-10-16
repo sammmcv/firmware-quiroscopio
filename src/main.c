@@ -54,7 +54,6 @@ extern void init_bno_i2c(i2c_inst_t *port, uint8_t addr);
 extern void init_bno_uart(void);
 extern bool bno_read(uart_inst_t *uart, uint8_t reg, size_t len, uint8_t *dst);
 extern bool bno_write(uart_inst_t *uart, uint8_t reg, const uint8_t *data, size_t len);
-extern bool bno_read_linear_acc(int16_t *x, int16_t *y, int16_t *z);
 // poll_i2c_bus ya está declarada en shared_types.h, no redeclarar aquí
 extern void bno_uart_recover(void);
 
@@ -96,15 +95,6 @@ extern const uint8_t SENSOR_ADDR[];
 #define ZERO_STUCK_N           10
 #define FAIL_STUCK_N           25
 #define REINIT_COOLDOWN_MS     2000
-
-// Helper para debug (no usado en versión actual)
-static void append_chunk(char *buf, size_t max_len, const char *chunk) {
-    size_t cur = strlen(buf);
-    size_t rem = max_len - cur;
-    if (rem > 1) {
-        strncat(buf, chunk, rem - 1);
-    }
-}
 
 // ========== Helpers de tiempo ==========
 static inline bool cooldown_elapsed(volatile uint32_t *last_ms, uint32_t cooldown_ms) {

@@ -48,24 +48,20 @@ typedef struct {
 // Prototipos de funciones públicas (sin static)
 // De ble_connection.c
 void ble_notify_att_payload(const uint8_t *data, size_t len);
-bool ble_has_space_for(uint16_t bytes);
 void ble_send_bytes(const uint8_t *data, uint16_t len);
 void ble_try_flush(void);
 void ble_stack_register_handlers(void);
 void ble_init_lock(spin_lock_t *lock);
 uint16_t ble_tx_free_space(void);
-uint16_t ble_current_att_mtu(void);  // NUEVO: Obtener MTU actual
 
 // De calibration.c
 void backup_all_offsets(void);
 void restore_all_offsets(void);
-void acc_apply_calib_q15(sensor_sample_raw_t* s, const acc_calib_q15_t* c);
 
 // De get_sensors.c
 void init_bno_uart(void);
 void init_bno_i2c(i2c_inst_t *port, uint8_t addr);
 void init_i2c_port(i2c_inst_t *port, uint sda_pin, uint scl_pin, uint baud);
-bool bno_read_linear_acc(int16_t *x, int16_t *y, int16_t *z);
 void bno_uart_recover(void);
 bool bno_read_acc_raw(sensor_sample_raw_t* s);
 bool bno_read_quat_raw(sensor_sample_raw_t* s);
@@ -78,7 +74,6 @@ bool read_bno_i2c_sample_raw(int idx, sensor_sample_raw_t *out);
 void superframe_stage_sensor(int sensor_idx, int16_t ax, int16_t ay, int16_t az,
                              int16_t qx, int16_t qy, int16_t qz, int16_t qw);
 void superframe_flush_and_send_if_ready(void);
-size_t pack_sensor_raw(uint8_t* out, const sensor_sample_raw_t* s);
 
 // Variables globales compartidas (extern)
 extern sensor_sample_t g_uart;

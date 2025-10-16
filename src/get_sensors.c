@@ -12,9 +12,6 @@
 #include "pico/sync.h"
 #include "hardware/irq.h"
 
-// forward (local): se usa antes de definirse
-static void try_reinit_bno_i2c(i2c_inst_t *port, uint8_t addr);
-
 // ===== I2C helpers (no bloqueantes, sin float) =====
 static inline int16_t le16(const uint8_t *p){
     return (int16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -98,8 +95,6 @@ static bool i2c_read_n_with_deadline(i2c_inst_t *i2c, uint8_t dev_addr,
 
 // ===== Aliases y Escalas =====
 #define BNO_REG_LIA     BNO055_LINEAR_ACCEL_DATA_X_LSB_ADDR
-#define BNO_ACC_SCALE   (1.0f / 100.f)      // 1 m/s² = 100 LSB
-#define BNO_QUAT_SCALE  (1.0f / 16384.0f)   // cuaternión escala
 
 // ===== Sensor Config =====
 const uint8_t SENSOR_ADDR[] = { 0x28, 0x29 };
@@ -186,14 +181,6 @@ heal_state_t i2c0_heal[NUM_SENSORS] = {0};  // Expuesta para main.c
 static heal_state_t i2c1_heal[NUM_SENSORS] = {0};  // Solo usada internamente en core1
 uint8_t zero_run_uart = 0, fail_uart = 0, moved_uart = 0;  // Expuestas para main.c
 uint32_t last_reinit_uart = 0;  // Expuesta para main.c
-
-// ===== Helper Functions =====
-static inline bool cooldown_elapsed(uint32_t *stamp, uint32_t ms) {
-    uint32_t t = to_ms_since_boot(get_absolute_time());
-    if (t - *stamp < ms) return false;
-    *stamp = t;
-    return true;
-}
 
 // ===== I2C Functions =====
 void init_i2c_port(i2c_inst_t *port, uint sda_pin, uint scl_pin, uint baud) {
@@ -300,20 +287,6 @@ bool i2c_read_regs_port(i2c_inst_t *port, uint8_t addr, uint8_t reg, uint8_t *bu
         if (r != (int)len) return false;
     }
     return true;
-}
-
-// Re-inicializar el sensor I2C si responde
-static void try_reinit_bno_i2c(i2c_inst_t *port, uint8_t addr) {
-    // Si el dispositivo responde, re-afirma NDOF y listo
-    uint8_t reg = BNO055_CHIP_ID_ADDR, cid = 0;
-    int w = i2c_write_timeout_us(port, addr, &reg, 1, true, I2C_PROBE_TIMEOUT_US);
-    if (w != 1) return;
-    int r = i2c_read_timeout_us(port, addr, &cid, 1, false, I2C_PROBE_TIMEOUT_US);
-    if (r != 1 || cid != 0xA0) return;
-
-    const uint8_t ndof[2] = { BNO055_OPR_MODE_ADDR, BNO055_OPR_MODE_NDOF };
-    (void)i2c_write_blocking(port, addr, ndof, 2, false);
-    sleep_ms(25);
 }
 
 // ===== UART Functions =====
@@ -470,18 +443,6 @@ void init_bno_uart(void) {
     // irq_set_priority(UART0_IRQ, 0x40);
     irq_set_enabled(UART0_IRQ, true);
     uart_set_irq_enables(UART_ID, true, false); // RX on, TX off
-}
-
-bool bno_read_linear_acc(int16_t *x, int16_t *y, int16_t *z) {
-    uint8_t buf[6];
-    if (!bno_read(UART_ID, BNO055_LINEAR_ACCEL_DATA_X_LSB_ADDR, 6, buf)) {
-        *x = *y = *z = 0;
-        return false;
-    }
-    *x = (int16_t)((buf[1] << 8) | buf[0]);
-    *y = (int16_t)((buf[3] << 8) | buf[2]);
-    *z = (int16_t)((buf[5] << 8) | buf[4]);
-    return true;
 }
 
 void bno_uart_recover(void) {
