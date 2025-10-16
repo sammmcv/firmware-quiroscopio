@@ -13,16 +13,14 @@
 
 // ===== Defines BLE =====
 // Usar BLE_TX_BUF_SIZE desde shared_types.h
+// Única cola basada en CAN_SEND_NOW (BTstack)
 #define TXQ_MAX 256           // Cola de supertramas para CAN_SEND_NOW (aumentado para minimizar drops)
 
 // ===== Variables BLE Globales =====
 uint16_t ble_con_handle = HCI_CON_HANDLE_INVALID;  // Expuesta para main.c
 static btstack_packet_callback_registration_t ble_hci_cb;
 
-// --- BLE TX queue (buffer circular con protección thread-safe) ---
-static uint8_t  ble_tx_buf[BLE_TX_BUF_SIZE];
-static volatile uint16_t ble_tx_write_pos = 0;
-static volatile uint16_t ble_tx_read_pos = 0;
+// --- Spinlock para sincronización (puede usarse en el futuro si es necesario) ---
 static spin_lock_t *ble_tx_lock;
 
 // --- Estado de advertising + chunk dinámico ---
@@ -123,154 +121,35 @@ static void txq_reset(void) {
     txq_tail = 0;
 }
 
-// ===== Buffer Circular - Helpers (legacy, mantener por compatibilidad) =====
+// ===== API Pública: Verificar espacio (métricas proporcionales) =====
+// Simula "bytes libres" basándose en el número de slots libres de txq[]
+// para conservar la semántica esperada por main.c sin el buffer circular legacy.
 uint16_t ble_tx_free_space(void) {
-    uint16_t wp = ble_tx_write_pos;
-    uint16_t rp = ble_tx_read_pos;
-    if (wp >= rp) {
-        return BLE_TX_BUF_SIZE - (wp - rp) - 1;
-    } else {
-        return (rp - wp) - 1;
-    }
+    uint16_t head = txq_head;
+    uint16_t tail = txq_tail;
+    uint16_t used = (head >= tail) ? (head - tail) : (TXQ_MAX - (tail - head));
+    uint16_t free_slots = (TXQ_MAX - 1) - used;
+    // Mapear linealmente a un "capacidad virtual" de BLE_TX_BUF_SIZE
+    // Devuelve 0..(BLE_TX_BUF_SIZE - step), con step ~ BLE_TX_BUF_SIZE/(TXQ_MAX-1)
+    if (free_slots == 0) return 0;
+    uint32_t virtual_bytes = ((uint32_t)BLE_TX_BUF_SIZE * free_slots) / (TXQ_MAX - 1);
+    if (virtual_bytes > 0xFFFF) virtual_bytes = 0xFFFF;
+    return (uint16_t)virtual_bytes;
 }
 
-static inline uint16_t ble_tx_available(void) {
-    uint16_t wp = ble_tx_write_pos;
-    uint16_t rp = ble_tx_read_pos;
-    if (wp >= rp) {
-        return wp - rp;
-    } else {
-        return BLE_TX_BUF_SIZE - (rp - wp);
-    }
-}
-
-static inline bool ble_tx_has_data(void) {
-    return ble_tx_read_pos != ble_tx_write_pos;
-}
-
-static inline void ble_tx_reset(void) {
-    uint32_t irq = spin_lock_blocking(ble_tx_lock);
-    ble_tx_write_pos = 0;
-    ble_tx_read_pos = 0;
-    spin_unlock(ble_tx_lock, irq);
-}
-
-// ===== API Pública: Verificar espacio =====
 bool ble_has_space_for(uint16_t bytes) {
-    return ble_tx_free_space() >= (bytes + 32);  // Margen reducido (con MTU wait ya no necesitamos 100B)
-}
-
-// ===== Encolar datos con protección thread-safe =====
-static void ble_tx_queue(const uint8_t *data, uint16_t len) {
-    if (len == 0) return;
-    
-    uint32_t irq = spin_lock_blocking(ble_tx_lock);
-    
-    uint16_t free = ble_tx_free_space();
-    if (len > free) {
-        // Marcar drop pero intentar meter lo que quepa
-        ble_drops++;
-        len = free;
-    }
-    
-    if (len > 0) {
-        uint16_t wp = ble_tx_write_pos;
-        
-        // Copiar en dos partes si cruza el final del buffer
-        uint16_t first_chunk = BLE_TX_BUF_SIZE - wp;
-        if (len <= first_chunk) {
-            memcpy(&ble_tx_buf[wp], data, len);
-            ble_tx_write_pos = (wp + len) % BLE_TX_BUF_SIZE;
-        } else {
-            memcpy(&ble_tx_buf[wp], data, first_chunk);
-            memcpy(&ble_tx_buf[0], data + first_chunk, len - first_chunk);
-            ble_tx_write_pos = len - first_chunk;
-        }
-    }
-    
-    spin_unlock(ble_tx_lock, irq);
+    // Mantener un pequeño margen para evitar borde 0
+    uint16_t free_b = ble_tx_free_space();
+    return free_b >= (uint16_t)(bytes + 32);
 }
 
 // ===== Vaciar cola respetando ATT CAN_SEND_NOW =====
 void ble_try_flush(void) {
-    // NUEVO: Usar la cola CAN_SEND_NOW si está habilitada
-    if (txq_has_data() && ble_con_handle != HCI_CON_HANDLE_INVALID) {
-        att_server_request_can_send_now_event(ble_con_handle);
-        return;
-    }
-    
-    // LEGACY: Mantener funcionalidad del buffer circular por compatibilidad
+    // Único camino: solicitar evento CAN_SEND_NOW si hay datos y hay conexión
     if (ble_con_handle == HCI_CON_HANDLE_INVALID) {
-        ble_tx_reset();
         return;
     }
-    
-    if (!ble_tx_has_data()) return;
-    
-    if (!att_server_can_send_packet_now(ble_con_handle)) {
-        att_server_request_can_send_now_event(ble_con_handle);
-        return;
-    }
-    
-    // Enviar un paquete del buffer circular
-    uint32_t irq = spin_lock_blocking(ble_tx_lock);
-    
-    uint16_t avail = ble_tx_available();
-    if (avail == 0) {
-        spin_unlock(ble_tx_lock, irq);
-        return;
-    }
-    
-    // Determinar tamaño del próximo paquete
-    // Superframes tienen 2 bytes de control + 14*N bytes de datos (N = popcount de presence)
-    // Mínimo: 2 bytes (sin sensores), Máximo: 72 bytes (5 sensores)
-    uint16_t rp = ble_tx_read_pos;
-    
-    // Leer los 2 bytes de control para calcular tamaño
-    uint8_t b0, b1;
-    if (avail < 2) {
-        spin_unlock(ble_tx_lock, irq);
-        return;
-    }
-    
-    // Peek en los primeros 2 bytes
-    b0 = ble_tx_buf[rp];
-    b1 = ble_tx_buf[(rp + 1) % BLE_TX_BUF_SIZE];
-    
-    uint8_t presence = (b0 >> 3) & 0x1F;
-    uint16_t packet_size = 2 + 14 * __builtin_popcount((unsigned)presence);
-    
-    if (avail < packet_size) {
-        // Paquete incompleto, esperar más datos
-        spin_unlock(ble_tx_lock, irq);
-        return;
-    }
-    
-    uint8_t packet[72];  // Máximo tamaño de supratrama
-    
-    // Copiar paquete del buffer circular
-    uint16_t first_chunk = BLE_TX_BUF_SIZE - rp;
-    if (packet_size <= first_chunk) {
-        memcpy(packet, &ble_tx_buf[rp], packet_size);
-    } else {
-        memcpy(packet, &ble_tx_buf[rp], first_chunk);
-        memcpy(packet + first_chunk, &ble_tx_buf[0], packet_size - first_chunk);
-    }
-    
-    ble_tx_read_pos = (rp + packet_size) % BLE_TX_BUF_SIZE;
-    
-    spin_unlock(ble_tx_lock, irq);
-    
-    // Enviar paquete
-    att_server_notify(ble_con_handle,
-        ATT_CHARACTERISTIC_6E400003_B5A3_F393_E0A9_E50E24DCCA9E_01_VALUE_HANDLE,
-        packet, packet_size);
-    
-    ble_packets_sent++;
-    ble_bytes_sent += packet_size;
-    
-    // Solicitar siguiente envío si hay más datos
-    if (ble_tx_has_data()) {
+    if (txq_has_data()) {
         att_server_request_can_send_now_event(ble_con_handle);
     }
 }
@@ -301,7 +180,6 @@ static void ble_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             break;
         case HCI_EVENT_DISCONNECTION_COMPLETE:
             ble_con_handle = HCI_CON_HANDLE_INVALID;
-            ble_tx_reset();
             txq_reset();  // Limpiar cola CAN_SEND_NOW
             ble_chunk_max = 0;
             gap_advertisements_enable(1);
